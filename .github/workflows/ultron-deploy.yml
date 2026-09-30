@@ -1,0 +1,36 @@
+name: Ultron deploy
+
+on:
+  push:
+    branches: [main]
+    paths: [resources/server/**]
+  workflow_dispatch:
+
+concurrency: ultron-deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -f resources/server/Dockerfile.h2s -t ultron resources/server
+
+      - name: Set up SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id && chmod 600 ~/.ssh/id
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      # ponytail: ship via ssh pipe, no registry; add GHCR when image upload gets slow
+      - name: Ship and restart
+        run: |
+          S="ssh -i ~/.ssh/id ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
+          docker save ultron | gzip | $S "gunzip | docker load"
+          $S 'docker rm -f ultron; docker run -d --name ultron --restart unless-stopped --network web \
+            -v ultron-data:/home/workspace/.openvscode-server -v ~/project:/home/workspace/project \
+            -v ~/token:/token:ro ultron --host 0.0.0.0 --connection-token-file /token'
+
+      - name: Smoke test
+        run: ssh -i ~/.ssh/id ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'sleep 10 && docker exec ultron wget -qO- localhost:3000/version'
