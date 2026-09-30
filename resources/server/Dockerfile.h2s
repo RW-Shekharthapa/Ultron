@@ -1,0 +1,17 @@
+# Build: docker build -f Dockerfile.h2s -t h2s-editor resources/server
+FROM gitpod/openvscode-server
+ENV O=/home/.openvscode-server
+USER root
+# ponytail: reuse the server's bundled node instead of apt's ancient one
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-pip python3-venv \
+ && rm -rf /var/lib/apt/lists/* && ln -s $O/node /usr/local/bin/node
+COPY code-192.png code-512.png favicon.ico manifest.json $O/resources/server/
+COPY branding/letterpress-*.svg branding/code-icon.svg branding/h2s-logo-color.png branding/h2s-logo-white.png $O/out/media/
+COPY branding/product.json $O/product.json
+COPY branding/workbench.html branding/workbench.js branding/workbench.css $O/out/vs/code/browser/workbench/
+USER openvscode-server
+# extensions + opencode CLI land in $HOME (/home/workspace); mount a volume on .openvscode-server to keep them
+RUN for e in ms-python.python ms-python.debugpy ritwickdey.liveserver sst-dev.opencode continue.continue; do \
+      $O/bin/openvscode-server --install-extension $e; done \
+ && curl -fsSL https://opencode.ai/install | bash \
+ && echo 'export PATH=$HOME/.opencode/bin:$PATH' >> ~/.bashrc

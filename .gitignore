@@ -26,3 +26,15 @@ product.overrides.json
 .vscode-test
 vscode-telemetry-docs/
 test-output.json
+
+# Personal / local tooling (not project files)
+.bash_history
+.bashrc
+.gitconfig
+.config/
+.local/
+.npm/
+.continue/
+.gemini/
+.opencode/
+.openvscode-server/
