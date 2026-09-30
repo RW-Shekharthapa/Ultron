@@ -8,14 +8,28 @@ on:
 
 concurrency: ultron-deploy
 
+env:
+  IMAGE: ghcr.io/rw-shekharthapa/ultron:latest # ghcr requires lowercase
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build image
-        run: docker build -f resources/server/Dockerfile.h2s -t ultron resources/server
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        run: |
+          docker build -f resources/server/Dockerfile.h2s -t $IMAGE resources/server
+          docker push $IMAGE
 
       - name: Set up SSH
         run: |
@@ -23,14 +37,12 @@ jobs:
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id && chmod 600 ~/.ssh/id
           ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      # ponytail: ship via ssh pipe, no registry; add GHCR when image upload gets slow
-      - name: Ship and restart
+      # ponytail: server must already be `docker login ghcr.io` with a read:packages token
+      - name: Pull and restart
         run: |
-          S="ssh -i ~/.ssh/id ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}"
-          docker save ultron | gzip | $S "gunzip | docker load"
-          $S 'docker rm -f ultron; docker run -d --name ultron --restart unless-stopped --network web \
-            -v ultron-data:/home/workspace/.openvscode-server -v ~/project:/home/workspace/project \
-            -v ~/token:/token:ro ultron --host 0.0.0.0 --connection-token-file /token'
-
-      - name: Smoke test
-        run: ssh -i ~/.ssh/id ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} 'sleep 10 && docker exec ultron wget -qO- localhost:3000/version'
+          ssh -i ~/.ssh/id ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "
+            docker pull $IMAGE && docker rm -f ultron
+            docker run -d --name ultron --restart unless-stopped --network web \
+              -v ultron-data:/home/workspace/.openvscode-server -v ~/project:/home/workspace/project \
+              -v ~/token:/token:ro $IMAGE --host 0.0.0.0 --connection-token-file /token
+            sleep 10 && docker exec ultron wget -qO- localhost:3000/version"
